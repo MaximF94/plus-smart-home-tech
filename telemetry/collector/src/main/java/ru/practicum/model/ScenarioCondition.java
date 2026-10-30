@@ -14,5 +14,13 @@ public class ScenarioCondition {
     private String sensorId;
     private ConditionType type;
     private ConditionOperation operation;
-    private Integer value;
+    private Object value;
+
+    public void setValue(Object value) {
+        if (value != null && !(value instanceof Integer) && !(value instanceof Boolean)) {
+            throw new IllegalArgumentException(
+                    "value должно быть null, Integer или Boolean, получено: " + value.getClass().getName());
+        }
+        this.value = value;
+    }
 }

@@ -39,9 +39,6 @@ public class EventMapper {
                     .build());
         } else if (event instanceof TemperatureSensorEvent temperature) {
             builder.setPayload(TemperatureSensorAvro.newBuilder()
-                    .setId(temperature.getId())
-                    .setHubId(temperature.getHubId())
-                    .setTimestamp(temperature.getTimestamp())
                     .setTemperatureC(temperature.getTemperatureC())
                     .setTemperatureF(temperature.getTemperatureF())
                     .build());
