@@ -60,4 +60,40 @@ public class EventServiceImpl implements EventService {
             }
         });
     }
+
+    @Override
+    public void sendSensorEvent(SensorEventAvro avro, String hubId) {
+        ProducerRecord<String, SpecificRecord> record = new ProducerRecord<>(
+                SENSORS_TOPIC,
+                null,
+                avro.getTimestamp().toEpochMilli(),
+                hubId,
+                avro
+        );
+        kafkaProducer.send(record, (metadata, exception) -> {
+            if (exception != null) {
+                log.error("Не удалось отправить событие датчика для хаба {}", hubId, exception);
+            } else {
+                log.info("Событие датчика отправлено для хаба {}", hubId);
+            }
+        });
+    }
+
+    @Override
+    public void sendHubEvent(HubEventAvro avro, String hubId) {
+        ProducerRecord<String, SpecificRecord> record = new ProducerRecord<>(
+                HUBS_TOPIC,
+                null,
+                avro.getTimestamp().toEpochMilli(),
+                hubId,
+                avro
+        );
+        kafkaProducer.send(record, (metadata, exception) -> {
+            if (exception != null) {
+                log.error("Не удалось отправить событие хаба {}", hubId, exception);
+            } else {
+                log.info("Событие хаба отправлено для {}", hubId);
+            }
+        });
+    }
 }
