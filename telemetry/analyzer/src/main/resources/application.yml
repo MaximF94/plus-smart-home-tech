@@ -1,6 +1,10 @@
 spring:
   application:
     name: analyzer
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema.sql
 
   datasource:
     url: jdbc:postgresql://localhost:5432/telemetry_analyzer
