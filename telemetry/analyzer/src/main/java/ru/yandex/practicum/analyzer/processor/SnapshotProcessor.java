@@ -9,6 +9,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.errors.WakeupException;
 import org.springframework.stereotype.Component;
+import ru.yandex.practicum.analyzer.config.KafkaProperties;
 import ru.yandex.practicum.analyzer.enums.ConditionOperation;
 import ru.yandex.practicum.analyzer.enums.ConditionType;
 import ru.yandex.practicum.analyzer.model.*;
@@ -27,53 +28,63 @@ import java.util.List;
 @Component
 public class SnapshotProcessor {
 
-    private static final String SNAPSHOTS_TOPIC = "telemetry.snapshots.v1";
 
     private final KafkaConsumer<String, SensorsSnapshotAvro> snapshotConsumer;
     private final ScenarioRepository scenarioRepository;
     private final HubRouterControllerGrpc.HubRouterControllerBlockingStub hubRouterClient;
+    private final KafkaProperties kafkaProperties;
 
     public SnapshotProcessor(
             KafkaConsumer<String, SensorsSnapshotAvro> snapshotConsumer,
             ScenarioRepository scenarioRepository,
+            KafkaProperties kafkaProperties,
             @GrpcClient("hub-router") HubRouterControllerGrpc.HubRouterControllerBlockingStub hubRouterClient) {
         this.snapshotConsumer = snapshotConsumer;
         this.scenarioRepository = scenarioRepository;
+        this.kafkaProperties = kafkaProperties;
         this.hubRouterClient = hubRouterClient;
     }
 
     public void start() {
+        String topic = kafkaProperties.getTopics().getSnapshots();
         try {
-            snapshotConsumer.subscribe(List.of(SNAPSHOTS_TOPIC));
+            snapshotConsumer.subscribe(List.of(topic));
 
             while (true) {
                 ConsumerRecords<String, SensorsSnapshotAvro> records =
                         snapshotConsumer.poll(Duration.ofMillis(1000));
 
+                if (records.isEmpty()) {
+                    continue;
+                }
+
+                boolean batchProcessed = true;
                 for (ConsumerRecord<String, SensorsSnapshotAvro> record : records) {
                     try {
                         handleSnapshot(record.value());
                     } catch (Exception e) {
-                        log.error("Ошибка обработки снапшота offset={}, partition={}",
+                        log.error("Ошибка обработки снапшота offset={}, partition={} — "
+                                        + "пакет не будет зафиксирован",
                                 record.offset(), record.partition(), e);
+                        batchProcessed = false;
+                        break;
                     }
                 }
 
-                if (!records.isEmpty()) {
+                if (batchProcessed) {
                     snapshotConsumer.commitSync();
                 }
             }
         } catch (WakeupException ignored) {
-
         } catch (Exception e) {
             log.error("Фатальная ошибка консьюмера снапшотов", e);
         } finally {
             try {
-                snapshotConsumer.commitSync();
-            } finally {
-                log.info("Закрываем консьюмер снапшотов");
                 snapshotConsumer.close();
+            } catch (Exception e) {
+                log.warn("Ошибка закрытия snapshotConsumer", e);
             }
+            log.info("Консьюмер снапшотов закрыт");
         }
     }
 
@@ -87,6 +98,13 @@ public class SnapshotProcessor {
         }
 
         for (Scenario scenario : scenarios) {
+
+            if (scenario.getConditions().isEmpty()) {
+                log.warn("Сценарий '{}' для хаба {} не содержит условий — пропускаем",
+                        scenario.getName(), hubId);
+                continue;
+            }
+
             boolean allMet = true;
 
             for (ScenarioCondition scenarioCondition : scenario.getConditions()) {
@@ -177,17 +195,21 @@ public class SnapshotProcessor {
                             .build())
                     .build();
 
+            if (hubRouterClient == null) {
+                throw new IllegalStateException("hubRouterClient is null! gRPC client not initialized");
+            }
+
             try {
-                if (hubRouterClient == null) {
-                    log.error("hubRouterClient is null! gRPC client not initialized");
-                    return;
-                }
                 log.info("Отправляю gRPC-запрос: {}", request);
                 hubRouterClient.handleDeviceAction(request);
                 log.info("Отправлено действие {} для датчика {}",
                         action.getType(), scenarioAction.getSensor().getId());
             } catch (Exception e) {
-                log.error("Ошибка отправки действия sensor={}", scenarioAction.getSensor().getId(), e);
+                log.error("Ошибка отправки действия sensor={} — "
+                                + "пакет не будет зафиксирован, снапшот перечитается",
+                        scenarioAction.getSensor().getId(), e);
+                throw new RuntimeException(
+                        "Не удалось отправить действие sensor=" + scenarioAction.getSensor().getId(), e);
             }
         }
     }

@@ -2,10 +2,12 @@ package ru.yandex.practicum.analyzer;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 import org.springframework.context.ConfigurableApplicationContext;
 import ru.yandex.practicum.analyzer.processor.HubEventProcessor;
 import ru.yandex.practicum.analyzer.processor.SnapshotProcessor;
 
+@ConfigurationPropertiesScan
 @SpringBootApplication
 public class Analyzer {
 

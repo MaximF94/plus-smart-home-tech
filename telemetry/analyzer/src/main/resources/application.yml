@@ -35,6 +35,11 @@ kafka:
     hub-events-group-id: analyzer-hub-events-group
     auto-offset-reset: earliest
     enable-auto-commit: false
+    key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    snapshot-value-deserializer: ru.yandex.practicum.analyzer.deserializer.SnapshotDeserializer
+    hub-event-value-deserializer: ru.yandex.practicum.analyzer.deserializer.HubEventDeserializer
+    max-poll-records: 500
+    fetch-max-wait-ms: 500
   topics:
     snapshots: telemetry.snapshots.v1
     hubs: telemetry.hubs.v1

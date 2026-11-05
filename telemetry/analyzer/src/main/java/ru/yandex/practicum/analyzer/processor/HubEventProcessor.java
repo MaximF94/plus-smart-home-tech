@@ -7,6 +7,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.errors.WakeupException;
 import org.springframework.stereotype.Component;
+import ru.yandex.practicum.analyzer.config.KafkaProperties;
 import ru.yandex.practicum.analyzer.model.*;
 import ru.yandex.practicum.analyzer.repository.SensorRepository;
 import ru.yandex.practicum.analyzer.service.ScenarioService;
@@ -19,44 +20,59 @@ import java.util.List;
 @Component
 @RequiredArgsConstructor
 public class HubEventProcessor implements Runnable {
-    private static final String HUBS_TOPIC = "telemetry.hubs.v1";
 
     private final KafkaConsumer<String, HubEventAvro> hubEventConsumer;
     private final SensorRepository sensorRepository;
     private final ScenarioService scenarioService;
+    private final KafkaProperties kafkaProperties;
 
     @Override
     public void run() {
+        String topic = kafkaProperties.getTopics().getHubs();
         try {
-            hubEventConsumer.subscribe(List.of(HUBS_TOPIC));
+            hubEventConsumer.subscribe(List.of(topic));
 
             while (true) {
                 ConsumerRecords<String, HubEventAvro> records =
                         hubEventConsumer.poll(Duration.ofMillis(1000));
 
+                if (records.isEmpty()) {
+                    continue;
+                }
+
+                boolean batchProcessed = true;
                 for (ConsumerRecord<String, HubEventAvro> record : records) {
                     try {
                         handleEvent(record.value());
                     } catch (Exception e) {
-                        log.error("Ошибка обработки hub-события offset={}, partition={}",
+                        log.error("Ошибка обработки hub-события offset={}, partition={} — "
+                                        + "пакет не будет зафиксирован",
                                 record.offset(), record.partition(), e);
+                        batchProcessed = false;
+                        break;
                     }
                 }
 
-                if (!records.isEmpty()) {
+                if (batchProcessed) {
                     hubEventConsumer.commitSync();
                 }
             }
         } catch (WakeupException ignored) {
 
         } catch (Exception e) {
-            log.error("Ошибка обработки hub-событий", e);
+            log.error("Ошибка консьюмера hub-событий", e);
         } finally {
             try {
                 hubEventConsumer.commitSync();
+            } catch (WakeupException | IllegalStateException e) {
+                log.warn("Не удалось зафиксировать смещения при остановке hubEventConsumer", e);
             } finally {
-                log.info("Закрываем консьюмер hub-событий");
-                hubEventConsumer.close();
+                try {
+                    hubEventConsumer.close();
+                } catch (Exception e) {
+                    log.warn("Ошибка закрытия hubEventConsumer", e);
+                }
+                log.info("Консьюмер hub-событий закрыт");
             }
         }
     }
