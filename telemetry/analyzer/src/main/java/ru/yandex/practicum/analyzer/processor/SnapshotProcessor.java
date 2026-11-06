@@ -7,6 +7,8 @@ import net.devh.boot.grpc.client.inject.GrpcClient;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.clients.consumer.OffsetAndMetadata;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.WakeupException;
 import org.springframework.stereotype.Component;
 import ru.yandex.practicum.analyzer.config.KafkaProperties;
@@ -64,8 +66,13 @@ public class SnapshotProcessor {
                         handleSnapshot(record.value());
                     } catch (Exception e) {
                         log.error("Ошибка обработки снапшота offset={}, partition={} — "
-                                        + "пакет не будет зафиксирован",
+                                        + "откатываем позицию на эту запись",
                                 record.offset(), record.partition(), e);
+
+                        snapshotConsumer.seek(
+                                new TopicPartition(record.topic(), record.partition()),
+                                new OffsetAndMetadata(record.offset())
+                        );
                         batchProcessed = false;
                         break;
                     }

@@ -5,6 +5,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.clients.consumer.OffsetAndMetadata;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.WakeupException;
 import org.springframework.stereotype.Component;
 import ru.yandex.practicum.analyzer.config.KafkaProperties;
@@ -46,8 +48,13 @@ public class HubEventProcessor implements Runnable {
                         handleEvent(record.value());
                     } catch (Exception e) {
                         log.error("Ошибка обработки hub-события offset={}, partition={} — "
-                                        + "пакет не будет зафиксирован",
+                                        + "откатываем позицию на эту запись",
                                 record.offset(), record.partition(), e);
+
+                        hubEventConsumer.seek(
+                                new TopicPartition(record.topic(), record.partition()),
+                                new OffsetAndMetadata(record.offset())
+                        );
                         batchProcessed = false;
                         break;
                     }
@@ -58,22 +65,15 @@ public class HubEventProcessor implements Runnable {
                 }
             }
         } catch (WakeupException ignored) {
-
         } catch (Exception e) {
-            log.error("Ошибка консьюмера hub-событий", e);
+            log.error("Фатальная ошибка консьюмера hub-событий", e);
         } finally {
             try {
-                hubEventConsumer.commitSync();
-            } catch (WakeupException | IllegalStateException e) {
-                log.warn("Не удалось зафиксировать смещения при остановке hubEventConsumer", e);
-            } finally {
-                try {
-                    hubEventConsumer.close();
-                } catch (Exception e) {
-                    log.warn("Ошибка закрытия hubEventConsumer", e);
-                }
-                log.info("Консьюмер hub-событий закрыт");
+                hubEventConsumer.close();
+            } catch (Exception e) {
+                log.warn("Ошибка закрытия hubEventConsumer", e);
             }
+            log.info("Консьюмер hub-событий закрыт");
         }
     }
 
