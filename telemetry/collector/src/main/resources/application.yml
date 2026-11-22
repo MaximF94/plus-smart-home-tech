@@ -1,3 +1,5 @@
-grpc:
-  server:
-    port: 59091
+spring:
+  application:
+    name: collector
+  config:
+    import: configserver:http://localhost:8888
